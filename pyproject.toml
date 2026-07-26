@@ -1,0 +1,19 @@
+[project]
+name = "projector-whiteboard"
+version = "0.1.0"
+description = "Add your description here"
+readme = "README.md"
+requires-python = ">=3.9"
+dependencies = [
+    "mediapipe>=0.10.35",
+    "numpy>=2.0.2",
+    "opencv-python>=5.0.0.93",
+    "pyautogui>=0.9.54",
+    "pyside6>=6.10.3",
+]
+
+[dependency-groups]
+dev = [
+    "pytest>=8.4.2",
+    "ruff>=0.16.0",
+]

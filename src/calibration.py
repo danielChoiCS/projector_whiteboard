@@ -1,8 +1,13 @@
 """
-Manual calibration: the user pinches at each of the 4 corners of their
-drawing surface, in order (top-left, top-right, bottom-right,
-bottom-left), to define the region that gets warped into "surface
-space" for drawing.
+Manual calibration: the user clicks the 4 corners of their drawing
+surface directly on the live camera feed, in order (top-left,
+top-right, bottom-right, bottom-left), to define the region that gets
+warped into "surface space" for drawing.
+
+This is mouse-driven rather than gesture-driven -- no dependency on
+hand_tracker.py or gestures.py. Clicking is more precise and removes
+hand-tracking noise as a variable during calibration, which matters
+since a bad calibration undermines everything drawn afterward.
 
 Hardening in this version:
   - 'z' undoes the most recently placed corner (redo just one corner
@@ -15,24 +20,10 @@ Hardening in this version:
     self-intersection). If it fails validation, the user is shown why
     and calibration restarts automatically rather than silently
     producing a broken homography.
-
-Deliberately NOT included: any gesture-based way to trigger a restart
-or clear. Calibration corners are placed via pinch, but undo/restart
-are keyboard-only. This is intentional -- a misclassified gesture
-during normal use should never be able to wipe out calibration (and,
-in main.py, never wipe out drawn work either).
-
-Depends on:
-  - hand_tracker.get_hand_state(frame) -- see main.py for the expected
-    interface contract.
-  - gestures.GestureController -- for pinch edge-detection, so briefly
-    holding a pinch only registers one corner.
 """
 
 import cv2
 import numpy as np
-from hand_tracker import get_hand_state
-from gestures import GestureController
 
 CORNER_LABELS = ["TOP-LEFT", "TOP-RIGHT", "BOTTOM-RIGHT", "BOTTOM-LEFT"]
 MIN_QUAD_AREA = 2000  # px^2, in camera space -- guards against a degenerate/collapsed quad
@@ -82,24 +73,36 @@ def _validate_quad(corners):
     return True, ""
 
 
-def calibrate_with_finger(cap, surface_w, surface_h, cooldown_frames=15):
-    corners = []
-    gesture_ctrl = GestureController(cooldown_frames=cooldown_frames)
+class _ClickState:
+    """Small mutable holder so the mouse callback (a plain function,
+    per OpenCV's API) can append to the in-progress corner list."""
+    def __init__(self):
+        self.corners = []
+
+
+def _on_mouse(event, x, y, flags, state):
+    if event == cv2.EVENT_LBUTTONDOWN and len(state.corners) < 4:
+        state.corners.append((x, y))
+
+
+def calibrate(cap, surface_w, surface_h):
+    click_state = _ClickState()
     status_msg = ""
     status_msg_ttl = 0  # frames remaining to show status_msg
 
     cv2.namedWindow("Calibration")
+    cv2.setMouseCallback("Calibration", _on_mouse, click_state)
 
     while True:
         ret, frame = cap.read()
         if not ret:
             continue
 
-        state = get_hand_state(frame)
+        corners = click_state.corners
         display = frame.copy()
 
         if len(corners) < 4:
-            cv2.putText(display, f"Pinch at: {CORNER_LABELS[len(corners)]}",
+            cv2.putText(display, f"Click: {CORNER_LABELS[len(corners)]}",
                         (20, 40), cv2.FONT_HERSHEY_SIMPLEX, 0.9, (0, 255, 255), 2)
         cv2.putText(display, "Z: undo last  |  C: restart all  |  Q: cancel",
                     (20, 70), cv2.FONT_HERSHEY_SIMPLEX, 0.55, (200, 200, 200), 1)
@@ -117,15 +120,6 @@ def calibrate_with_finger(cap, surface_w, surface_h, cooldown_frames=15):
             cv2.polylines(display, [np.array(corners, dtype=np.int32)],
                           isClosed=(len(corners) == 4), color=(0, 200, 0), thickness=1)
 
-        if state is not None and len(corners) < 4:
-            pos = state["position"]
-            cv2.circle(display, pos, 8, (255, 0, 255), 2)
-            is_new_trigger, gesture = gesture_ctrl.update(state["gesture"])
-            if is_new_trigger and gesture == "pinch":
-                corners.append(pos)
-        else:
-            gesture_ctrl.update(None if state is None else state["gesture"])
-
         cv2.imshow("Calibration", display)
         key = cv2.waitKey(1) & 0xFF
 
@@ -135,7 +129,7 @@ def calibrate_with_finger(cap, surface_w, surface_h, cooldown_frames=15):
             corners.pop()
             status_msg, status_msg_ttl = "Last corner undone", 60
         elif key == ord('c') and corners:
-            corners = []
+            click_state.corners = []
             status_msg, status_msg_ttl = "Calibration restarted", 60
 
         if len(corners) == 4:
@@ -143,11 +137,11 @@ def calibrate_with_finger(cap, surface_w, surface_h, cooldown_frames=15):
             if is_valid:
                 break
             status_msg, status_msg_ttl = f"Invalid region ({reason}) -- restarting", 90
-            corners = []
+            click_state.corners = []
 
     cv2.destroyWindow("Calibration")
 
-    src_pts = np.array(corners, dtype=np.float32)
+    src_pts = np.array(click_state.corners, dtype=np.float32)
     dst_pts = np.array([
         [0, 0],
         [surface_w - 1, 0],

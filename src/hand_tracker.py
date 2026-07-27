@@ -20,22 +20,28 @@ project (calibration.py, main.py):
         {
             "position": (x, y),   # int pixel coords in CAMERA space --
                                    # the index fingertip
-            "gesture":  "pinch" | "fist" | "point"
+            "gesture":  "point" | "fist" | "open"
         }
 
-Gesture logic (same reasoning as before, just re-implemented against
-the new landmark result type):
-  - "pinch": thumb tip and index tip are close together, normalized by
-    a hand-scale reference (wrist-to-middle-MCP distance) so the
-    threshold works regardless of how far the hand is from the camera.
-  - "fist": index, middle, ring, and pinky are all "curled" -- each
-    fingertip is closer to the wrist than that finger's MCP joint is.
-    Rotation-invariant, unlike a raw y-coordinate comparison.
-  - "point": anything that's neither of the above.
+Gesture logic:
+  - "point": index finger extended, middle/ring/pinky curled -- a
+    deliberate pointing pose. Triggers DRAW.
+  - "fist": all four non-thumb fingers curled. Triggers ERASE.
+  - "open": anything else (relaxed open hand, etc). This is the
+    neutral/hover state -- no drawing or erasing happens, which is
+    what lets the user move their hand over the surface without
+    leaving a trail. Deliberately NOT a catch-all that includes
+    "point" -- point is checked explicitly against its own curl
+    pattern, so an open hand can't accidentally register as drawing.
 
-Pinch is checked before fist, since pinching can incidentally curl the
-other fingers somewhat -- "draw" should take priority over "erase"
-when both could plausibly apply.
+"Curled" is determined per-finger via distance-from-wrist (tip closer
+to wrist than that finger's MCP joint = curled), which is
+rotation-invariant, unlike a raw y-coordinate comparison.
+
+(Earlier versions of this file also detected a "pinch" gesture for
+drawing. It was dropped in favor of "point" -- pinch requires precise
+thumb-index proximity that proved noisier/harder to hold steadily
+than a simple extended-index pose.)
 
 MODEL FILE: HandLandmarker needs a .task model file. On first run,
 this module downloads it automatically to ./models/hand_landmarker.task
@@ -54,8 +60,10 @@ CURL_MARGIN against your own hand/lighting before running the full app.
 
 import math
 import os
+import ssl
 import time
 import urllib.request
+from urllib.error import URLError
 
 import cv2
 import mediapipe as mp
@@ -71,7 +79,6 @@ MODEL_URL = (
 # Landmark indices (MediaPipe Hands convention -- unchanged from the
 # legacy solutions API, same 21-point layout)
 WRIST = 0
-THUMB_TIP = 4
 INDEX_MCP = 5
 INDEX_TIP = 8
 MIDDLE_MCP = 9
@@ -81,11 +88,10 @@ RING_TIP = 16
 PINKY_MCP = 17
 PINKY_TIP = 20
 
-# Tuning knobs -- adjust against your own camera/hand if pinch or fist
+# Tuning knob -- adjust against your own camera/hand if fist/point
 # detection feels too sensitive or not sensitive enough.
-PINCH_THRESHOLD_RATIO = 0.4  # thumb-index dist, as a fraction of palm size
-CURL_MARGIN = 0.9            # a finger counts as curled if tip-to-wrist
-                              # distance < CURL_MARGIN * mcp-to-wrist distance
+CURL_MARGIN = 0.9  # a finger counts as curled if tip-to-wrist distance
+                    # < CURL_MARGIN * mcp-to-wrist distance
 
 
 def _dist(a, b):
@@ -97,7 +103,31 @@ def _ensure_model_downloaded():
         return
     os.makedirs(os.path.dirname(MODEL_PATH), exist_ok=True)
     print(f"Downloading hand landmark model to {MODEL_PATH} ...")
-    urllib.request.urlretrieve(MODEL_URL, MODEL_PATH)
+    try:
+        urllib.request.urlretrieve(MODEL_URL, MODEL_PATH)
+    except URLError as e:
+        if not isinstance(e.reason, ssl.SSLCertVerificationError):
+            raise
+        # Common on macOS python.org installs: the interpreter has no
+        # access to the system trust store, so ANY https request fails
+        # verification, not just this one. Retry using certifi's cert
+        # bundle if it's available, rather than making the user go fix
+        # their Python install just to run this script.
+        try:
+            import certifi
+        except ImportError:
+            raise RuntimeError(
+                "SSL certificate verification failed, and certifi isn't "
+                "installed to fall back on. Either run 'pip install certifi' "
+                "and retry, or (on macOS with python.org Python) run the "
+                "'Install Certificates.command' script in your Python's "
+                "Applications folder. Alternatively, download the model "
+                f"manually from {MODEL_URL} and place it at {MODEL_PATH}."
+            ) from e
+        context = ssl.create_default_context(cafile=certifi.where())
+        with urllib.request.urlopen(MODEL_URL, context=context) as response, \
+                open(MODEL_PATH, "wb") as out_file:
+            out_file.write(response.read())
     print("Done.")
 
 
@@ -155,25 +185,20 @@ class HandTracker:
         if palm_size < 1e-3:
             return None, pts  # degenerate frame, treat as no detection
 
-        pinch_dist = _dist(pts[THUMB_TIP], pts[INDEX_TIP])
-        is_pinching = (pinch_dist / palm_size) < PINCH_THRESHOLD_RATIO
-
         def is_curled(tip_idx, mcp_idx):
             return _dist(pts[tip_idx], pts[WRIST]) < CURL_MARGIN * _dist(pts[mcp_idx], pts[WRIST])
 
-        is_fist = (
-            is_curled(INDEX_TIP, INDEX_MCP)
-            and is_curled(MIDDLE_TIP, MIDDLE_MCP)
-            and is_curled(RING_TIP, RING_MCP)
-            and is_curled(PINKY_TIP, PINKY_MCP)
-        )
+        index_curled = is_curled(INDEX_TIP, INDEX_MCP)
+        middle_curled = is_curled(MIDDLE_TIP, MIDDLE_MCP)
+        ring_curled = is_curled(RING_TIP, RING_MCP)
+        pinky_curled = is_curled(PINKY_TIP, PINKY_MCP)
 
-        if is_pinching:
-            gesture = "pinch"
-        elif is_fist:
+        if index_curled and middle_curled and ring_curled and pinky_curled:
             gesture = "fist"
-        else:
+        elif (not index_curled) and middle_curled and ring_curled and pinky_curled:
             gesture = "point"
+        else:
+            gesture = "open"
 
         position = (int(pts[INDEX_TIP][0]), int(pts[INDEX_TIP][1]))
         return {"position": position, "gesture": gesture}, pts

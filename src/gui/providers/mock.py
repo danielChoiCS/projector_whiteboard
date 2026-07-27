@@ -14,11 +14,11 @@ from src.gui.providers.base import CalibrationProvider, HandProvider
 from src.models import CalibrationState, Gesture, HandState
 
 _HAND_SCENARIOS: list[HandState] = [
-    HandState(detected=False, x=0.0, y=0.0, gesture=Gesture.NONE, confidence=0.0, timestamp=0.0),
-    HandState(detected=True, x=0.5, y=0.3, gesture=Gesture.MOVE, confidence=0.95, timestamp=0.0),
-    HandState(detected=True, x=0.6, y=0.35, gesture=Gesture.CLICK, confidence=0.9, timestamp=0.0),
-    HandState(detected=True, x=0.4, y=0.5, gesture=Gesture.DRAG, confidence=0.8, timestamp=0.0),
-    HandState(detected=True, x=0.45, y=0.55, gesture=Gesture.SCROLL, confidence=0.7, timestamp=0.0),
+    HandState(detected=False, x=0.0, y=0.0, gesture=Gesture.NONE, confidence=0.0, timestamp=0.0, camera_connected=True),
+    HandState(detected=True, x=0.5, y=0.3, gesture=Gesture.OPEN, confidence=0.95, timestamp=0.0, camera_connected=True),
+    HandState(detected=True, x=0.55, y=0.32, gesture=Gesture.POINT, confidence=0.92, timestamp=0.0, camera_connected=True),
+    HandState(detected=True, x=0.6, y=0.35, gesture=Gesture.POINT, confidence=0.9, timestamp=0.0, camera_connected=True),
+    HandState(detected=True, x=0.45, y=0.5, gesture=Gesture.FIST, confidence=0.8, timestamp=0.0, camera_connected=True),
 ]
 
 _MOCK_STEP_INTERVAL_MS = 1500
@@ -54,6 +54,7 @@ class MockHandProvider(HandProvider):
             gesture=sample.gesture,
             confidence=sample.confidence,
             timestamp=time.time(),
+            camera_connected=sample.camera_connected,
         )
         self.hand_state_changed.emit(state)
 

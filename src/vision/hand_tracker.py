@@ -44,7 +44,7 @@ thumb-index proximity that proved noisier/harder to hold steadily
 than a simple extended-index pose.)
 
 MODEL FILE: HandLandmarker needs a .task model file. On first run,
-this module downloads it automatically to ./models/hand_landmarker.task
+this module downloads it automatically to src/assets/hand_landmarker.task
 if not already present (requires internet access for that one-time
 download). If your environment has no internet access at runtime,
 download it yourself ahead of time from:
@@ -54,8 +54,8 @@ and place it at MODEL_PATH below.
 Run this file directly (`python hand_tracker.py`) for a standalone
 visual test -- shows the camera feed with detected landmarks,
 fingertip position, and current gesture label, independent of
-calibration.py/main.py. Useful for tuning PINCH_THRESHOLD_RATIO or
-CURL_MARGIN against your own hand/lighting before running the full app.
+calibration/manual.py or main.py. Useful for tuning PINCH_THRESHOLD_RATIO
+or CURL_MARGIN against your own hand/lighting before running the full app.
 """
 
 import math
@@ -70,7 +70,9 @@ import mediapipe as mp
 from mediapipe.tasks.python import vision
 from mediapipe.tasks.python.core.base_options import BaseOptions
 
-MODEL_PATH = os.path.join(os.path.dirname(__file__), "models", "hand_landmarker.task")
+MODEL_PATH = os.path.normpath(
+    os.path.join(os.path.dirname(__file__), "..", "assets", "hand_landmarker.task")
+)
 MODEL_URL = (
     "https://storage.googleapis.com/mediapipe-models/hand_landmarker/"
     "hand_landmarker/float16/latest/hand_landmarker.task"
@@ -168,6 +170,11 @@ class HandTracker:
         and landmarks is the raw list of (x, y) pixel points for the
         detected hand (or None) -- exposed for the standalone visual
         test below.
+
+        state also carries "confidence" (MediaPipe's handedness score for
+        the detected hand, in [0.0, 1.0]) alongside "position"/"gesture",
+        for callers (e.g. a HandProvider) that want to surface tracking
+        confidence rather than assume a fixed value.
         """
         h, w = frame.shape[:2]
         rgb = cv2.cvtColor(frame, cv2.COLOR_BGR2RGB)
@@ -201,7 +208,8 @@ class HandTracker:
             gesture = "open"
 
         position = (int(pts[INDEX_TIP][0]), int(pts[INDEX_TIP][1]))
-        return {"position": position, "gesture": gesture}, pts
+        confidence = result.handedness[0][0].score if result.handedness else 1.0
+        return {"position": position, "gesture": gesture, "confidence": confidence}, pts
 
     def close(self):
         self._landmarker.close()

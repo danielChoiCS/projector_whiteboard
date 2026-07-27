@@ -1,33 +1,7 @@
-<<<<<<< HEAD
-"""Entry point for Project Whiteboard.
-
-Wires mock vision/calibration providers into the GUI so it runs before the
-real subsystems exist. Swapping in real providers later is a change to this
-file only; src/gui and src/models are unaffected.
 """
+Standalone OpenCV whiteboard demo (no GUI). For the PySide6 GUI, see
+src/app.py instead -- run this file as `uv run python -m src.main`.
 
-import sys
-
-from PySide6.QtWidgets import QApplication
-
-from src.gui.main_window import MainWindow
-from src.gui.providers.mock import MockCalibrationProvider, MockHandProvider
-
-
-def main() -> None:
-    """Launch the Project Whiteboard GUI."""
-    app = QApplication(sys.argv)
-
-    hand_provider = MockHandProvider()
-    calibration_provider = MockCalibrationProvider()
-
-    window = MainWindow(hand_provider, calibration_provider)
-    window.resize(720, 480)
-    window.show()
-
-    sys.exit(app.exec())
-=======
-"""
 Entry point: calibrate the drawing surface by clicking its 4 corners
 on the live camera feed, then run the live draw/erase loop
 constrained to that surface.
@@ -48,9 +22,9 @@ preserved across a recalibration; only the camera-to-surface mapping
 is redone.
 
 --------------------------------------------------------------------------
-EXPECTED INTERFACE FROM YOUR HAND-TRACKING MODULE (hand_tracker.py):
+EXPECTED INTERFACE FROM THE HAND-TRACKING MODULE (src/vision/hand_tracker.py):
 
-    from hand_tracker import get_hand_state
+    from src.vision import get_hand_state
 
     def get_hand_state(frame) -> dict | None:
         \"\"\"
@@ -75,9 +49,9 @@ EXPECTED INTERFACE FROM YOUR HAND-TRACKING MODULE (hand_tracker.py):
 
 import cv2
 import numpy as np
-from hand_tracker import get_hand_state
-from calibration import calibrate
-from gestures import GestureController
+
+from src.calibration import calibrate
+from src.vision import GestureController, get_hand_state
 
 SURFACE_W, SURFACE_H = 1280, 720   # output "whiteboard" resolution
 ERASE_RADIUS = 30                  # pixels, in surface space
@@ -181,7 +155,6 @@ def main():
 
     cap.release()
     cv2.destroyAllWindows()
->>>>>>> ryanbranch
 
 
 if __name__ == "__main__":

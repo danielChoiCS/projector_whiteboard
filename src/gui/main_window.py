@@ -25,7 +25,13 @@ from src.models import (
 )
 
 _INITIAL_HAND_STATE = HandState(
-    detected=False, x=0.0, y=0.0, gesture=Gesture.NONE, confidence=0.0, timestamp=0.0
+    detected=False,
+    x=0.0,
+    y=0.0,
+    gesture=Gesture.NONE,
+    confidence=0.0,
+    timestamp=0.0,
+    camera_connected=False,
 )
 _INITIAL_CALIBRATION_STATE = CalibrationState(
     calibrated=False,
@@ -72,6 +78,7 @@ class MainWindow(QWidget):
         root_layout.addLayout(right_column, stretch=1)
 
         self._hand_provider.hand_state_changed.connect(self._on_hand_state)
+        self._hand_provider.frame_ready.connect(self._camera_view.show_frame)
         self._calibration_provider.calibration_state_changed.connect(
             self._on_calibration_state
         )
@@ -85,6 +92,8 @@ class MainWindow(QWidget):
     def _on_hand_state(self, state: HandState) -> None:
         self._latest_hand_state = state
         self._tracking_panel.update_hand_state(state)
+        if not state.camera_connected:
+            self._camera_view.show_unavailable()
         self._refresh_status()
 
     def _on_calibration_state(self, state: CalibrationState) -> None:
@@ -111,7 +120,7 @@ class MainWindow(QWidget):
 
         application_state = ApplicationState(
             system_state=system_state,
-            camera_connected=False,
+            camera_connected=hand.camera_connected,
             tracking_active=hand.detected,
             calibrated=calibration.calibrated,
             message=message,

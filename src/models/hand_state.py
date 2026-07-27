@@ -18,6 +18,10 @@ class HandState:
         gesture: Currently recognized gesture.
         confidence: Tracking confidence in [0.0, 1.0].
         timestamp: Seconds since epoch when this state was produced.
+        camera_connected: Whether the camera feed backing this state is
+            currently available. False whenever no camera/frame source is
+            producing data at all, independent of whether a hand happens
+            to be detected in the current frame.
     """
 
     detected: bool
@@ -26,3 +30,4 @@ class HandState:
     gesture: Gesture
     confidence: float
     timestamp: float
+    camera_connected: bool
